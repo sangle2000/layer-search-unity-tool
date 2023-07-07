@@ -10,40 +10,46 @@ using static Codice.Client.BaseCommands.Import.Commit;
 using static UnityEditor.Experimental.GraphView.GraphView;
 using Unity.VisualScripting;
 using UnityEditor.PackageManager.UI;
+using UnityEditor.Experimental.GraphView;
+using log4net.Util;
+using Codice.Client.BaseCommands.BranchExplorer;
 
 namespace MyTools
 {
     public class LayerFoundingTool : EditorWindow
     {
-        public enum OPTIONS { };
         static LayerFoundingTool win;
         string showAttrib = "";
         string nameAttribObj = "";
         string nameLayer = "";
         string nameAttrib = "";
         string checkObject = "";
+        string[] text = null;
+        string[] options = { "In Scene", "Prefab" };
 
         int selected = 0;
+        int selected_option = 0;
         int lenOfPrefab = 0;
         int count = 0;
+        int index = 0;
+        int lenOfList = 0;
 
         bool showAttribObj = true;
         bool showLayer = true;
-        bool GOSelection = false;
+        bool GOSelection = true;
         bool beginCount = false;
 
         Vector2 paletteScrollPos = new Vector2(0, 0);
 
         JObject data = new JObject();
-        JObject prefabData = new JObject();
         List<string> layerList = new List<string>();
-        ArrayList layerNames = new ArrayList();
 
         public static void InitWindow()
         {
             win = EditorWindow.GetWindow<LayerFoundingTool>("Layer Founding");
             win.minSize = new Vector2(450, 500);
             win.maxSize = new Vector2(450, 500);
+            Selection.activeGameObject = null;
             win.Show();
         }
 
@@ -52,11 +58,29 @@ namespace MyTools
 
             SaveDataIntoJsonFile();
 
-            GetLayerList();
+            //GetLayerList();
+            if (Selection.activeGameObject == null)
+            {
+                Selection.activeGameObject = GetGameObjectByIndex(index);
 
-            string[] text = layerList.ToArray();
+                SaveDataIntoJsonFile();
 
-            int lenOfList = text.Length;
+                text = layerList.ToArray();
+
+                lenOfList = text.Length;
+
+                checkObject = text[selected];
+
+                count = 0;
+
+                selected_option = 0;
+
+                beginCount = true;
+            }
+
+            text = layerList.ToArray();
+
+            lenOfList = text.Length;
 
             GUILayout.BeginArea(new Rect(0, 20, 500, showLayer ? ((lenOfList / 2) * 75) : 100));
             nameLayer = "Layer List";
@@ -67,7 +91,7 @@ namespace MyTools
                 {
                     EditorGUI.BeginChangeCheck();
                     GUILayout.BeginArea(new Rect(40, 30, 500, 100));
-                    selected = GUILayout.SelectionGrid(selected, text, Math.Min(lenOfList, 3), EditorStyles.radioButton, GUILayout.Width(400));
+                    selected = GUILayout.SelectionGrid(selected, text, Math.Min(lenOfList, 3), EditorStyles.radioButton, GUILayout.Width(500));
                     GUILayout.EndArea();
 
                     if (EditorGUI.EndChangeCheck())
@@ -87,16 +111,24 @@ namespace MyTools
             GUILayout.BeginArea(new Rect(0, showLayer ? ((lenOfList / 2) * 50) : 50, 500, 20));
 
             EditorGUI.BeginChangeCheck();
-            GOSelection = EditorGUILayout.Toggle("Game Object", GOSelection);
+            selected_option = GUILayout.SelectionGrid(selected_option, options, 2, EditorStyles.radioButton, GUILayout.Width(400));
             if (EditorGUI.EndChangeCheck())
             {
                 count = 0;
                 beginCount = true;
+                if(selected_option == 0)
+                {
+                    GOSelection = true;
+                }
+                else
+                {
+                    GOSelection = false;
+                }
             }
 
             GUILayout.EndArea();
 
-            GUILayout.BeginArea(new Rect(0, showLayer ? ((lenOfList / 2) * 50) + 30 : 50, 500, showAttribObj ? (GOSelection ? data.Count : lenOfPrefab) * 100 : 100));
+            GUILayout.BeginArea(new Rect(0, showLayer ? ((lenOfList / 2) * 50) + 30 : 80, 500, showAttribObj ? (GOSelection ? data.Count : lenOfPrefab) * 100 : 100));
             paletteScrollPos = GUILayout.BeginScrollView(paletteScrollPos, GUILayout.ExpandWidth(true), GUILayout.Height(320));
 
             if (GOSelection)
@@ -119,7 +151,7 @@ namespace MyTools
                                 }
                                 EditorGUILayout.BeginVertical("box");
                                 showAttrib = property.Value.ToString();
-                                nameAttrib = property.Name;
+                                nameAttrib = property.Name.Split("_")[1];
 
                                 EditorGUILayout.BeginHorizontal();
                                 EditorGUILayout.LabelField(nameAttrib, GUILayout.Width(200));
@@ -134,7 +166,7 @@ namespace MyTools
                                 }
                                 EditorGUILayout.EndHorizontal();
                                 EditorGUILayout.EndVertical();
-                            }           
+                            }
                             EditorGUI.indentLevel--;
                         }
                         beginCount = false;
@@ -185,11 +217,12 @@ namespace MyTools
                             }
                         }
                         beginCount = false;
-                    } else if (!Selection.activeTransform)
+                    }
+                    else if (!Selection.activeTransform)
                     {
                         showAttribObj = false;
                     }
-                }            
+                }
             }
             GUILayout.EndScrollView();
             GUILayout.EndArea();
@@ -200,35 +233,59 @@ namespace MyTools
             data = new();
             List<GameObject> realList = new List<GameObject>();
 
-            GameObject[] allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
+            GameObject[] allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+            //GameObject[] allObjects = GetAllGameObjects();
+
             foreach (GameObject go in allObjects)
             {
-                if (EditorUtility.IsPersistent(go.transform.root.gameObject))
-                    continue;
                 realList.Add(go);
             }
 
             for (int i = 0; i < realList.Count; i++)
             {
-                string name = realList[i].name;
-                data.Add(name, LayerMask.LayerToName(realList[i].layer));
-                if (!layerList.Contains(LayerMask.LayerToName(realList[i].layer)))
+                if (LayerMask.LayerToName(realList[i].layer) != "Default")
                 {
-                    layerList.Add(LayerMask.LayerToName(realList[i].layer));
+                    string name = i + "_" + realList[i].name;
+                    data.Add(name, LayerMask.LayerToName(realList[i].layer));
+                    if (!layerList.Contains(LayerMask.LayerToName(realList[i].layer)))
+                    {
+                        layerList.Add(LayerMask.LayerToName(realList[i].layer));
+                    }
                 }
             }
         }
 
-        private void GetLayerList()
+        private GameObject GetGameObjectByIndex(int index)
         {
-            layerNames = new();
-            for (int i = 0; i <= 31; i++) //user defined layers start with layer 8 and unity supports 31 layers
+            List<GameObject> allObjects = new List<GameObject>();
+            GetAllGameObjectsInScene(allObjects);
+
+            if (index >= 0 && index < allObjects.Count)
             {
-                var layerN = LayerMask.LayerToName(i); //get the name of the layer
-                if (layerN.Length > 0)
-                {
-                    layerNames.Add(layerN);
-                }
+                return allObjects[index];
+            }
+
+            return null;
+        }
+
+        private void GetAllGameObjectsInScene(List<GameObject> allObjects)
+        {
+            GameObject[] rootObjects = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+
+            foreach (GameObject rootObject in rootObjects)
+            {
+                allObjects.Add(rootObject);
+                AddChildrenRecursive(rootObject.transform, allObjects);
+            }
+        }
+
+        private void AddChildrenRecursive(UnityEngine.Transform parent, List<GameObject> allObjects)
+        {
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                UnityEngine.Transform child = parent.GetChild(i);
+                allObjects.Add(child.gameObject);
+                AddChildrenRecursive(child, allObjects);
             }
         }
     }
